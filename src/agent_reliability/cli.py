@@ -17,7 +17,11 @@ from .evaluate import (
 from .io import load_gold, load_jsonl, load_traces, write_json, write_jsonl
 from .models import ComparisonThresholds, EvaluationReport, MetricThresholds
 from .providers import require_provider, run_predictor
-from .production import KeyedFixturePredictor, ProductionInput, drift_report, shadow_replay
+from .production import (
+    KeyedFixturePredictor, ProductionInput, ReviewCandidate, WeakObservation,
+    drift_report, fold_review_labels, mine_review_candidates, shadow_replay,
+    weak_observation_report,
+)
 
 
 def _thresholds(args: argparse.Namespace) -> MetricThresholds:
@@ -144,6 +148,31 @@ def _shadow_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mine_review_command(args: argparse.Namespace) -> int:
+    rows = mine_review_candidates(load_gold(args.gold), load_jsonl(args.inputs, ProductionInput),
+        load_traces(args.baseline_traces), load_traces(args.candidate_traces),
+        confidence_below=args.confidence_below)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    write_jsonl(args.output, rows)
+    print(f"Selected {len(rows)} records for human review: {args.output}")
+    return 0
+
+
+def _fold_review_command(args: argparse.Namespace) -> int:
+    updated = fold_review_labels(load_gold(args.gold), load_jsonl(args.reviewed, ReviewCandidate))
+    write_jsonl(args.output, updated)
+    print(f"Wrote gold set with {len(updated)} records: {args.output}")
+    return 0
+
+
+def _weak_observations_command(args: argparse.Namespace) -> int:
+    result = weak_observation_report(load_jsonl(args.observations, WeakObservation))
+    write_json(args.output, result)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    print(f"Weak observation report: {args.output}")
+    return 0
+
+
 def _add_eval_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dataset", default="dataset")
     parser.add_argument("--name", default="run")
@@ -207,6 +236,26 @@ def build_parser() -> argparse.ArgumentParser:
     shadow.add_argument("--dataset", default="synthetic-reference")
     shadow.add_argument("--output", type=Path, default=Path("reports/shadow"))
     shadow.set_defaults(handler=_shadow_command)
+
+    mine = commands.add_parser("mine-review", help="select novel/uncertain synthetic reference cases for human labeling")
+    mine.add_argument("--gold", type=Path, required=True)
+    mine.add_argument("--inputs", type=Path, required=True)
+    mine.add_argument("--baseline-traces", type=Path, required=True)
+    mine.add_argument("--candidate-traces", type=Path, required=True)
+    mine.add_argument("--confidence-below", type=float, default=0.7)
+    mine.add_argument("--output", type=Path, default=Path("review-export/production-review.jsonl"))
+    mine.set_defaults(handler=_mine_review_command)
+
+    fold = commands.add_parser("fold-review", help="fold only explicitly human-labeled review rows into a new gold JSONL")
+    fold.add_argument("--gold", type=Path, required=True)
+    fold.add_argument("--reviewed", type=Path, required=True)
+    fold.add_argument("--output", type=Path, required=True)
+    fold.set_defaults(handler=_fold_review_command)
+
+    weak = commands.add_parser("weak-observations", help="summarize confidence-weighted reactions separately from gold metrics")
+    weak.add_argument("--observations", type=Path, required=True)
+    weak.add_argument("--output", type=Path, default=Path("reports/weak-observations.json"))
+    weak.set_defaults(handler=_weak_observations_command)
     return parser
 
 

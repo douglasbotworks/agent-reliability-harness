@@ -44,6 +44,22 @@ python examples/run_demo.py
 # candidate output is recorded for evaluation but is never served.
 agent-reliability shadow-replay --gold examples/toy_gold.jsonl \
   --inputs examples/toy_production_inputs.jsonl --output reports/shadow
+
+# Select uncertain/novel/disagreeing cases, then a person fills human_label.
+agent-reliability mine-review --gold examples/toy_gold.jsonl \
+  --inputs examples/toy_production_inputs.jsonl \
+  --baseline-traces reports/shadow/baseline-traces.jsonl \
+  --candidate-traces reports/shadow/candidate-traces.jsonl \
+  --output reports/review/production-review.jsonl
+
+# Fold explicitly labeled rows into a separate expanded gold file.
+agent-reliability fold-review --gold examples/toy_gold.jsonl \
+  --reviewed reports/review/production-review-labeled.jsonl \
+  --output reports/gold-v2.jsonl
+
+# Summarize weak reactions using source-supplied confidence weights.
+agent-reliability weak-observations \
+  --observations examples/toy_weak_observations.jsonl
 ```
 
 Evaluation writes JSON and Markdown. Comparison does the same. CLI exit codes are `0` for a passing evaluation/comparison, `1` for a measured threshold failure, and `2` for invalid input, missing configuration, or operational errors. Judge agreement and review exports are descriptive and exit `0` when inputs are valid; they do not represent a quality threshold.
@@ -65,6 +81,10 @@ Passing synthetic tests or thresholds does not establish model quality, calibrat
 `shadow-replay` is a local, synthetic reference pack. It requires explicitly supplied gold and incoming JSONL files, runs both fixture predictors on each identical input, records paired traces, reports disagreements and coarse input-feature drift, and evaluates quality only when every incoming row has an expected label. Candidate output is never served. The fixture predictors read explicit `baseline_label` and `candidate_label` fields; they are not real models. Drift output contains counts of distinct and novel categorical values plus coarse text-length buckets; it omits caller-provided category values and raw text. The novel-record rate denominator is all incoming records, including rows without that feature. Novel-value counts prompt investigation, not a semantic drift score.
 
 The two paired trace JSONL files intentionally include each supplied input and predictor output. The drift summary omits raw content, but the trace artifacts are not privacy-filtered: a real source adapter must apply its deployment's retention, access, and PII controls to the input and output files. The reference command itself does not upload data or enforce retention.
+
+`mine-review` selects records with a novel coarse feature, baseline/candidate disagreement, or a confidence value below the threshold. The exported queue intentionally includes the original input and should receive the same storage controls as traces. It leaves `human_label` blank. `fold-review` creates a new gold JSONL only when every queued row has a nonempty human label, and rejects duplicate IDs or overwriting existing gold records. It never infers labels.
+
+`weak-observations` summarizes positive/negative reactions with caller-provided `[0, 1]` confidence weights. Signal names must use the bounded schema taxonomy (`reopened_ticket`, `corrected_answer`, `thumbs_down`, `complaint`, `escalation`, `thumbs_up`, `fixed_confirmation`, `no_follow_up`, `reaction_positive`, `reaction_negative`); arbitrary strings are rejected and never copied into report keys. It does not define universal signal weights, infer truth, or merge weak observations into evaluation metrics. Reports label this as weak evidence. The included reactions and weights are synthetic examples.
 
 The library exposes `ProductionInput`, `shadow_replay(records, baseline, candidate, ...)`, and `drift_report(gold, incoming)` for local source adapters. A deployment must supply its own source, retention, PII handling, observation and reporting adapters. This repository does not retain or transmit production data, implement continuous polling, or choose customer sampling, retention, labeling ownership, or hosting. Gold-set mining and weak-label scoring remain later phases.
 

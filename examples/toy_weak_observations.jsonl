@@ -1,0 +1,3 @@
+{"schema_version":1,"record_id":"feedback-001","signal":"thumbs_up","source_says_positive":true,"confidence_weight":0.6}
+{"schema_version":1,"record_id":"feedback-002","signal":"reopened_ticket","source_says_positive":false,"confidence_weight":0.8}
+{"schema_version":1,"record_id":"feedback-003","signal":"corrected_answer","source_says_positive":false,"confidence_weight":0.9}

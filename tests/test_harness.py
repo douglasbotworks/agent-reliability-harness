@@ -11,7 +11,11 @@ from agent_reliability.evaluate import compare_reports, evaluate, judge_calibrat
 from agent_reliability.io import load_gold, load_traces
 from agent_reliability.models import ComparisonThresholds, GoldRecord, MetricThresholds, TraceRecord
 from agent_reliability.providers import EchoBaseline, MissingProviderError, require_provider, run_predictor
-from agent_reliability.production import KeyedFixturePredictor, ProductionInput, drift_report, shadow_replay
+from agent_reliability.production import (
+    KeyedFixturePredictor, ProductionInput, ReviewCandidate, WeakObservation,
+    drift_report, fold_review_labels, mine_review_candidates, shadow_replay,
+    weak_observation_report,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLD = ROOT / "examples/toy_gold.jsonl"
@@ -303,6 +307,90 @@ def test_shadow_replay_isolates_predictor_input_mutations():
         "baseline_label": "pass", "candidate_label": "fail"})]
     pair = shadow_replay(incoming, Mutator(), KeyedFixturePredictor("candidate", "candidate_label"), task_name="toy")
     assert pair["candidate"][0].predicted_label == "fail"
+
+
+def test_review_mining_rejects_trace_input_mismatch():
+    gold, _ = dataset()
+    incoming = [ProductionInput(schema_version=1, record_id="x", input={"intent": "new"})]
+    mismatched = [TraceRecord(schema_version=1, record_id="x", task_name="test", input={"intent": "other"},
+        output={}, predicted_label="pass")]
+    with pytest.raises(ValueError, match="input mismatch"):
+        mine_review_candidates(gold, incoming, mismatched, mismatched)
+
+
+def test_gold_mining_queues_disagreements_and_foldback_requires_human_labels():
+    gold, _ = dataset()
+    incoming = [ProductionInput(schema_version=1, record_id="new-1", input={
+        "baseline_label": "pass", "candidate_label": "fail", "intent": "novel"})]
+    baseline = run_predictor([GoldRecord(schema_version=1, id="new-1", input=incoming[0].input,
+        expected_label="unlabeled")], KeyedFixturePredictor("base", "baseline_label"), "toy")
+    candidate = run_predictor([GoldRecord(schema_version=1, id="new-1", input=incoming[0].input,
+        expected_label="unlabeled")], KeyedFixturePredictor("candidate", "candidate_label"), "toy")
+    queue = mine_review_candidates(gold, incoming, baseline, candidate)
+    assert queue[0].human_label == ""
+    assert "novel_input_feature" in queue[0].reasons
+    assert "predictor_disagreement" in queue[0].reasons
+    with pytest.raises(ValueError, match="no human label"):
+        fold_review_labels(gold, queue)
+    labeled = [queue[0].model_copy(update={"human_label": "fail"})]
+    folded = fold_review_labels(gold, labeled)
+    assert len(folded) == len(gold) + 1
+    assert folded[-1].expected_label == "fail"
+
+
+def test_gold_foldback_rejects_overwrite_and_duplicate_review_ids():
+    gold, _ = dataset()
+    known = ReviewCandidate(record_id=gold[0].id, input=gold[0].input,
+        baseline_prediction="pass", candidate_prediction="pass", reasons=["low_confidence"], human_label="fail")
+    with pytest.raises(ValueError, match="already exists"):
+        fold_review_labels(gold, [known])
+
+
+def test_weak_observations_use_caller_weights_and_remain_separate_from_gold():
+    rows = [WeakObservation(schema_version=1, record_id="a", signal="thumbs_up", source_says_positive=True, confidence_weight=0.5),
+            WeakObservation(schema_version=1, record_id="b", signal="complaint", source_says_positive=False, confidence_weight=1)]
+    report = weak_observation_report(rows)
+    assert report["weighted_positive_rate"] == pytest.approx(1 / 3)
+    assert "not gold labels" in report["scope_note"]
+    assert "no default signal weights" in report["weighting"]
+    with pytest.raises(ValueError, match="duplicate"):
+        weak_observation_report([rows[0], rows[0]])
+    with pytest.raises(ValueError):
+        WeakObservation(schema_version=1, record_id="pii", signal="person@example.test", source_says_positive=False, confidence_weight=1)
+
+
+def test_cli_mines_review_and_folds_back_only_labeled_rows(tmp_path):
+    shadow = invoke_cli("shadow-replay", "--gold", str(GOLD),
+        "--inputs", str(ROOT / "examples/toy_production_inputs.jsonl"),
+        "--output", str(tmp_path / "shadow"))
+    assert shadow.returncode == 0, shadow.stderr
+    queue_path = tmp_path / "queue.jsonl"
+    mined = invoke_cli("mine-review", "--gold", str(GOLD),
+        "--inputs", str(ROOT / "examples/toy_production_inputs.jsonl"),
+        "--baseline-traces", str(tmp_path / "shadow/baseline-traces.jsonl"),
+        "--candidate-traces", str(tmp_path / "shadow/candidate-traces.jsonl"),
+        "--output", str(queue_path))
+    assert mined.returncode == 0, mined.stderr
+    queue = [json.loads(line) for line in queue_path.read_text().splitlines()]
+    assert queue and all(row["human_label"] == "" for row in queue)
+    for row in queue:
+        row["human_label"] = "review"
+    reviewed = tmp_path / "reviewed.jsonl"
+    reviewed.write_text("".join(json.dumps(row) + "\n" for row in queue))
+    folded_path = tmp_path / "expanded-gold.jsonl"
+    folded = invoke_cli("fold-review", "--gold", str(GOLD), "--reviewed", str(reviewed),
+                        "--output", str(folded_path))
+    assert folded.returncode == 0, folded.stderr
+    assert len(load_gold(folded_path)) == len(load_gold(GOLD)) + len(queue)
+
+
+def test_cli_writes_weak_observation_summary(tmp_path):
+    result = invoke_cli("weak-observations", "--observations",
+        str(ROOT / "examples/toy_weak_observations.jsonl"), "--output", str(tmp_path / "weak.json"))
+    assert result.returncode == 0, result.stderr
+    report = json.loads((tmp_path / "weak.json").read_text())
+    assert report["observation_count"] == 3
+    assert "not gold labels" in report["scope_note"]
 
 
 def test_cli_shadow_replay_writes_report_and_paired_traces(tmp_path):
