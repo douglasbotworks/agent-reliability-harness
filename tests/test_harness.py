@@ -11,6 +11,7 @@ from agent_reliability.evaluate import compare_reports, evaluate, judge_calibrat
 from agent_reliability.io import load_gold, load_traces
 from agent_reliability.models import ComparisonThresholds, GoldRecord, MetricThresholds, TraceRecord
 from agent_reliability.providers import EchoBaseline, MissingProviderError, require_provider, run_predictor
+from agent_reliability.production import KeyedFixturePredictor, ProductionInput, drift_report, shadow_replay
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLD = ROOT / "examples/toy_gold.jsonl"
@@ -253,3 +254,67 @@ def test_cli_rejects_path_like_report_names(tmp_path):
                         "--name", "../escape", "--output", str(tmp_path))
     assert result.returncode == 2
     assert "name must contain" in result.stderr
+
+
+def test_shadow_replay_pairs_identical_inputs_and_drift_omits_raw_content():
+    gold, _ = dataset()
+    incoming = [ProductionInput(schema_version=1, record_id="p1", input={
+        "baseline_label": "pass", "candidate_label": "fail", "intent": "novel", "text": "private synthetic string"},
+        expected_label="pass")]
+    pair = shadow_replay(incoming, KeyedFixturePredictor("base", "baseline_label"),
+                         KeyedFixturePredictor("candidate", "candidate_label"), task_name="toy")
+    assert pair["baseline"][0].input == pair["candidate"][0].input
+    assert pair["baseline"][0].predicted_label == "pass"
+    assert pair["candidate"][0].predicted_label == "fail"
+    drift = drift_report(gold, incoming)
+    assert drift["features"]["intent"]["incoming_novel_value_count"] == 1
+    assert "private synthetic string" not in json.dumps(drift)
+
+
+def test_drift_never_serializes_caller_category_values():
+    gold, _ = dataset()
+    sensitive = "person@example.test and free form private note " + ("x" * 200)
+    incoming = [ProductionInput(schema_version=1, record_id="p1", input={"intent": sensitive})]
+    report = json.dumps(drift_report(gold, incoming))
+    assert sensitive not in report
+    assert "person@example.test" not in report
+    assert "incoming_novel_value_count" in report
+
+
+def test_shadow_replay_rejects_duplicate_ids_and_missing_fixture_key():
+    record = ProductionInput(schema_version=1, record_id="x", input={"baseline_label": "ok"})
+    with pytest.raises(ValueError, match="duplicate"):
+        shadow_replay([record, record], KeyedFixturePredictor("a", "baseline_label"),
+                      KeyedFixturePredictor("b", "baseline_label"), task_name="toy")
+    with pytest.raises(RuntimeError, match="candidate_label"):
+        shadow_replay([record], KeyedFixturePredictor("a", "baseline_label"),
+                      KeyedFixturePredictor("b", "candidate_label"), task_name="toy")
+
+
+def test_shadow_replay_isolates_predictor_input_mutations():
+    class Mutator:
+        name = "mutator"
+
+        def predict(self, item):
+            item.input["baseline_label"] = "corrupted"
+            return {}, "pass", 0, 0, None
+
+    incoming = [ProductionInput(schema_version=1, record_id="x", input={
+        "baseline_label": "pass", "candidate_label": "fail"})]
+    pair = shadow_replay(incoming, Mutator(), KeyedFixturePredictor("candidate", "candidate_label"), task_name="toy")
+    assert pair["candidate"][0].predicted_label == "fail"
+
+
+def test_cli_shadow_replay_writes_report_and_paired_traces(tmp_path):
+    inputs = tmp_path / "incoming.jsonl"
+    inputs.write_text(json.dumps({"schema_version": 1, "record_id": "x", "input": {
+        "baseline_label": "pass", "candidate_label": "fail", "intent": "novel", "text": "fixture"},
+        "expected_label": "pass"}) + "\n")
+    result = invoke_cli("shadow-replay", "--gold", str(GOLD), "--inputs", str(inputs),
+                        "--output", str(tmp_path / "out"))
+    assert result.returncode == 0, result.stderr
+    report = json.loads((tmp_path / "out/shadow-report.json").read_text())
+    assert report["served_candidate_output"] is False
+    assert report["prediction_disagreements"] == 1
+    assert report["candidate_evaluation"]["accuracy"] == 0
+    assert (tmp_path / "out/baseline-traces.jsonl").exists()

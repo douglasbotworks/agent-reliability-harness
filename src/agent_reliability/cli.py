@@ -14,9 +14,10 @@ from .evaluate import (
     compare_reports, comparison_markdown, evaluate, judge_calibration,
     report_markdown, review_csv, review_rows,
 )
-from .io import load_gold, load_traces, write_json, write_jsonl
+from .io import load_gold, load_jsonl, load_traces, write_json, write_jsonl
 from .models import ComparisonThresholds, EvaluationReport, MetricThresholds
 from .providers import require_provider, run_predictor
+from .production import KeyedFixturePredictor, ProductionInput, drift_report, shadow_replay
 
 
 def _thresholds(args: argparse.Namespace) -> MetricThresholds:
@@ -112,6 +113,37 @@ def _review_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _shadow_command(args: argparse.Namespace) -> int:
+    gold = load_gold(args.gold)
+    incoming = load_jsonl(args.inputs, ProductionInput)
+    pair = shadow_replay(incoming,
+        KeyedFixturePredictor("synthetic-baseline", args.baseline_key),
+        KeyedFixturePredictor("synthetic-candidate", args.candidate_key), task_name=args.task)
+    expected = {row.record_id: row.expected_label for row in incoming}
+    labeled = all(label is not None for label in expected.values())
+    result: dict = {
+        "schema_version": 1, "mode": "shadow_replay", "served_candidate_output": False,
+        "same_input_count": len(incoming), "prediction_disagreements": sum(
+            left.predicted_label != right.predicted_label for left, right in zip(pair["baseline"], pair["candidate"])),
+        "drift": drift_report(gold, incoming),
+        "scope_note": "Synthetic fixture workflow. Prediction disagreement is not a quality estimate without human-validated labels.",
+    }
+    if labeled:
+        labeled_gold = [type(gold[0])(schema_version=1, id=row.record_id, input=row.input,
+                                     expected_label=row.expected_label or "") for row in incoming]
+        result["baseline_evaluation"] = evaluate(labeled_gold, pair["baseline"], dataset=args.dataset,
+            run_name="shadow-baseline", thresholds=MetricThresholds(min_accuracy=0, min_recall=0)).model_dump(mode="json")
+        result["candidate_evaluation"] = evaluate(labeled_gold, pair["candidate"], dataset=args.dataset,
+            run_name="shadow-candidate", thresholds=MetricThresholds(min_accuracy=0, min_recall=0)).model_dump(mode="json")
+    args.output.mkdir(parents=True, exist_ok=True)
+    write_json(args.output / "shadow-report.json", result)
+    write_jsonl(args.output / "baseline-traces.jsonl", pair["baseline"])
+    write_jsonl(args.output / "candidate-traces.jsonl", pair["candidate"])
+    print(json.dumps({k: v for k, v in result.items() if k not in {"baseline_evaluation", "candidate_evaluation"}}, indent=2))
+    print(f"Shadow report and paired traces: {args.output}")
+    return 0
+
+
 def _add_eval_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dataset", default="dataset")
     parser.add_argument("--name", default="run")
@@ -165,6 +197,16 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--confidence-below", type=float, default=0.7)
     review.add_argument("--output", type=Path, default=Path("review-export"))
     review.set_defaults(handler=_review_command)
+
+    shadow = commands.add_parser("shadow-replay", help="synthetic reference: compare two predictors on identical local inputs")
+    shadow.add_argument("--gold", type=Path, required=True)
+    shadow.add_argument("--inputs", type=Path, required=True)
+    shadow.add_argument("--baseline-key", default="baseline_label")
+    shadow.add_argument("--candidate-key", default="candidate_label")
+    shadow.add_argument("--task", default="synthetic-production")
+    shadow.add_argument("--dataset", default="synthetic-reference")
+    shadow.add_argument("--output", type=Path, default=Path("reports/shadow"))
+    shadow.set_defaults(handler=_shadow_command)
     return parser
 
 

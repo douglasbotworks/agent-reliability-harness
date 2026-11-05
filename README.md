@@ -39,6 +39,11 @@ agent-reliability review-export --gold examples/toy_gold.jsonl \
 
 # Run a complete temporary-directory demo: baseline PASS, regression FAIL.
 python examples/run_demo.py
+
+# Synthetic post-launch reference: paired predictors see identical inputs;
+# candidate output is recorded for evaluation but is never served.
+agent-reliability shadow-replay --gold examples/toy_gold.jsonl \
+  --inputs examples/toy_production_inputs.jsonl --output reports/shadow
 ```
 
 Evaluation writes JSON and Markdown. Comparison does the same. CLI exit codes are `0` for a passing evaluation/comparison, `1` for a measured threshold failure, and `2` for invalid input, missing configuration, or operational errors. Judge agreement and review exports are descriptive and exit `0` when inputs are valid; they do not represent a quality threshold.
@@ -54,6 +59,14 @@ Labels are dataset-defined strings, not a built-in enum. Reports include the uni
 The tool operates only on files the caller names. It does not read email, access private datasets, send data to a provider, or upload reports. The included fixtures contain synthetic task examples only. Keep private inputs, traces, and generated reports out of source control. Review exports are inert templates; a blank `human_label` is intentionally left for a person.
 
 Passing synthetic tests or thresholds does not establish model quality, calibrated confidence, customer acceptance, or production reliability. Results depend on representative labels, correct annotation, matching record coverage, and task-specific thresholds. A judge's agreement with gold is not proof of the judge's general quality.
+
+## Production evaluation reference (Phase 2a)
+
+`shadow-replay` is a local, synthetic reference pack. It requires explicitly supplied gold and incoming JSONL files, runs both fixture predictors on each identical input, records paired traces, reports disagreements and coarse input-feature drift, and evaluates quality only when every incoming row has an expected label. Candidate output is never served. The fixture predictors read explicit `baseline_label` and `candidate_label` fields; they are not real models. Drift output contains counts of distinct and novel categorical values plus coarse text-length buckets; it omits caller-provided category values and raw text. The novel-record rate denominator is all incoming records, including rows without that feature. Novel-value counts prompt investigation, not a semantic drift score.
+
+The two paired trace JSONL files intentionally include each supplied input and predictor output. The drift summary omits raw content, but the trace artifacts are not privacy-filtered: a real source adapter must apply its deployment's retention, access, and PII controls to the input and output files. The reference command itself does not upload data or enforce retention.
+
+The library exposes `ProductionInput`, `shadow_replay(records, baseline, candidate, ...)`, and `drift_report(gold, incoming)` for local source adapters. A deployment must supply its own source, retention, PII handling, observation and reporting adapters. This repository does not retain or transmit production data, implement continuous polling, or choose customer sampling, retention, labeling ownership, or hosting. Gold-set mining and weak-label scoring remain later phases.
 
 ## Development
 

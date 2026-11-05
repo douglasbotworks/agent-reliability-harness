@@ -1,6 +1,6 @@
-{"expected_label": "pass", "id": "toy-001", "input": {"baseline_label": "pass", "text": "package fits documented behavior"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
-{"expected_label": "pass", "id": "toy-002", "input": {"baseline_label": "pass", "text": "all expected outputs match"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
-{"expected_label": "fail", "id": "toy-003", "input": {"baseline_label": "fail", "text": "required field is absent"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
-{"expected_label": "fail", "id": "toy-004", "input": {"baseline_label": "fail", "text": "unexpected exception returned"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
-{"expected_label": "review", "id": "toy-005", "input": {"baseline_label": "review", "text": "review required for uncertain result"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
-{"expected_label": "review", "id": "toy-006", "input": {"baseline_label": "review", "text": "ambiguous fixture asks for review"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
+{"expected_label": "pass", "id": "toy-001", "input": {"baseline_label": "pass", "intent": "success", "language": "en", "text": "package fits documented behavior"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
+{"expected_label": "pass", "id": "toy-002", "input": {"baseline_label": "pass", "intent": "success", "language": "en", "text": "all expected outputs match"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
+{"expected_label": "fail", "id": "toy-003", "input": {"baseline_label": "fail", "intent": "error", "language": "en", "text": "required field is absent"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
+{"expected_label": "fail", "id": "toy-004", "input": {"baseline_label": "fail", "intent": "error", "language": "en", "text": "unexpected exception returned"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
+{"expected_label": "review", "id": "toy-005", "input": {"baseline_label": "review", "intent": "ambiguous", "language": "en", "text": "review required for uncertain result"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}
+{"expected_label": "review", "id": "toy-006", "input": {"baseline_label": "review", "intent": "ambiguous", "language": "en", "text": "ambiguous fixture asks for review"}, "metadata": {"kind": "synthetic"}, "schema_version": 1}

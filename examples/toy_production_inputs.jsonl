@@ -1,0 +1,3 @@
+{"schema_version":1,"record_id":"prod-001","input":{"baseline_label":"pass","candidate_label":"pass","intent":"success","language":"en","text":"synthetic known request"},"expected_label":"pass"}
+{"schema_version":1,"record_id":"prod-002","input":{"baseline_label":"fail","candidate_label":"pass","intent":"error","language":"en","text":"synthetic known failure"},"expected_label":"fail"}
+{"schema_version":1,"record_id":"prod-003","input":{"baseline_label":"review","candidate_label":"fail","intent":"new-intent","language":"fr","text":"synthetic novel input"},"expected_label":"review"}
