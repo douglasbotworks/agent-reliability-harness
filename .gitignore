@@ -1,0 +1,15 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.egg-info/
+reports/*.json
+reports/*.md
+reports/*.jsonl
+reports/*.csv
+!reports/.gitkeep
+review-export/
+.coverage
+htmlcov/
