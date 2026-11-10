@@ -40,6 +40,9 @@ agent-reliability review-export --gold examples/toy_gold.jsonl \
 # Run a complete temporary-directory demo: baseline PASS, regression FAIL.
 python examples/run_demo.py
 
+# Walk through a four-queue support-routing regression example (synthetic only).
+python examples/support-routing/run_demo.py
+
 # Synthetic post-launch reference: paired predictors see identical inputs;
 # candidate output is recorded for evaluation but is never served.
 agent-reliability shadow-replay --gold examples/toy_gold.jsonl \
@@ -61,6 +64,12 @@ agent-reliability fold-review --gold examples/toy_gold.jsonl \
 agent-reliability weak-observations \
   --observations examples/toy_weak_observations.jsonl
 ```
+
+The support-routing example is a candidate first pilot workflow, not a validated
+customer use case. Its balanced 20-row fixture is invented and demonstrates how
+a deliberately misrouted ticket can fail configured gates; it makes no claim
+about real ticket data or model behavior. See
+[`examples/support-routing/README.md`](examples/support-routing/README.md).
 
 Evaluation writes JSON and Markdown. Comparison does the same. CLI exit codes are `0` for a passing evaluation/comparison, `1` for a measured threshold failure, and `2` for invalid input, missing configuration, or operational errors. Judge agreement and review exports are descriptive and exit `0` when inputs are valid; they do not represent a quality threshold.
 

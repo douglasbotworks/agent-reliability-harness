@@ -12,6 +12,14 @@ The strongest near-term commercial use is a fixed-scope implementation pilot. Se
 
 A small product team already shipping a classification or routing feature powered by an LLM, and changing its prompt/model without a representative regression set. Examples include support-ticket routing, lead categorization, or document-type labeling. Avoid starting with open-ended autonomous agents: today's label-based metrics do not measure tool use, multi-step completion, factual grounding, or safety adequately.
 
+**First workflow hypothesis: support-ticket routing.** The synthetic walkthrough
+uses four proposed queues (`billing`, `account`, `technical`, `refund`) because
+misroutes are easy for a customer to inspect and score against agreed labels.
+This is a discovery hypothesis, not a customer commitment or validated demand;
+the actual workflow and label taxonomy should come from the first qualified
+team. The accompanying 20-row fixture is entirely invented and must not be
+presented as customer evidence.
+
 ## Pilot offer hypothesis
 
 **AI change-regression setup — one workflow, fixed scope**
