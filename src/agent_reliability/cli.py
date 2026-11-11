@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -54,6 +55,7 @@ def _evaluate_command(args: argparse.Namespace) -> int:
     traces = load_traces(args.traces)
     report = evaluate(gold, traces, dataset=args.dataset, run_name=args.name,
                       thresholds=_thresholds(args))
+    report = _with_provenance(report, _input_provenance(args.gold, args.traces))
     json_path, md_path = _save_report(report, args.output)
     print(report_markdown(report))
     print(f"JSON report: {json_path}\nMarkdown report: {md_path}")
@@ -68,12 +70,34 @@ def _run_command(args: argparse.Namespace) -> int:
         write_jsonl(args.traces_out, traces)
     report = evaluate(gold, traces, dataset=args.dataset, run_name=args.name,
                       thresholds=_thresholds(args))
+    report = _with_provenance(report, {
+        "gold_sha256": _sha256(args.gold),
+        "traces_sha256": _sha256(args.traces_out) if args.traces_out else _sha256_records(traces),
+    })
     json_path, md_path = _save_report(report, args.output)
     print(report_markdown(report))
     if args.traces_out:
         print(f"Traces: {args.traces_out}")
     print(f"JSON report: {json_path}\nMarkdown report: {md_path}")
     return 0 if report.passed else 1
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _sha256_records(records: list) -> str:
+    payload = "".join(json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n"
+                      for record in records).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _input_provenance(gold_path: Path, traces_path: Path) -> dict[str, str]:
+    return {"gold_sha256": _sha256(gold_path), "traces_sha256": _sha256(traces_path)}
+
+
+def _with_provenance(report: EvaluationReport, provenance: dict[str, str]) -> EvaluationReport:
+    return EvaluationReport.model_validate({**report.model_dump(), "provenance": provenance})
 
 
 def _compare_command(args: argparse.Namespace) -> int:

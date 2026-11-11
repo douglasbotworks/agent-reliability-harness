@@ -92,11 +92,16 @@ models.
 
 Evaluation reports contain accuracy, per-label support/predicted counts,
 precision/recall/F1, the confusion matrix, and mean latency/cost when present.
-They do not report latency/cost percentiles, bind themselves to gold/trace file
-hashes, summarize model/prompt versions from traces, or prove that the fixture
-represents the target population. Preserve the matching local inputs and trace
-files with each report, and choose the dataset, labels, sample, and gates with
-the team running the pilot.
+CLI evaluation reports include SHA-256 digests of the exact gold and trace input
+files. For `run` without `--traces-out`, the trace digest covers the canonical
+JSONL serialization of the generated trace records. `compare` rejects
+reports with different gold-file digests when both reports include provenance.
+Older reports without provenance remain comparable by dataset ID, row count,
+and label set only. Digests identify bytes; they do not prove who created a file
+or that it represents the target population. Reports still do not include
+latency/cost percentiles or summarize model/prompt versions from traces.
+Preserve the matching local inputs and trace files with each report, and choose
+the dataset, labels, sample, and gates with the team running the pilot.
 
 ## Data formats
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -9,7 +10,9 @@ import pytest
 
 from agent_reliability.evaluate import compare_reports, evaluate, judge_calibration, review_csv, review_rows
 from agent_reliability.io import load_gold, load_traces
-from agent_reliability.models import ComparisonThresholds, GoldRecord, MetricThresholds, TraceRecord
+from agent_reliability.models import (
+    ComparisonThresholds, EvaluationReport, GoldRecord, MetricThresholds, TraceRecord,
+)
 from agent_reliability.providers import EchoBaseline, MissingProviderError, require_provider, run_predictor
 from agent_reliability.production import (
     KeyedFixturePredictor, ProductionInput, ReviewCandidate, WeakObservation,
@@ -177,6 +180,30 @@ def test_cli_run_writes_trace_and_both_reports(tmp_path):
     assert traces_out.exists()
     assert (tmp_path / "run-test.json").exists()
     assert (tmp_path / "run-test.md").exists()
+    report = json.loads((tmp_path / "run-test.json").read_text())
+    assert report["provenance"]["gold_sha256"] == hashlib.sha256(GOLD.read_bytes()).hexdigest()
+    assert report["provenance"]["traces_sha256"] == hashlib.sha256(traces_out.read_bytes()).hexdigest()
+
+
+def test_cli_run_hashes_canonical_traces_when_not_saved(tmp_path):
+    result = invoke_cli("run", "--gold", str(GOLD), "--provider", "echo",
+                        "--name", "canonical", "--output", str(tmp_path))
+    assert result.returncode == 0, result.stderr
+    report = json.loads((tmp_path / "canonical.json").read_text())
+    assert len(report["provenance"]["traces_sha256"]) == 64
+    assert set(report["provenance"]["traces_sha256"]) <= set("0123456789abcdef")
+
+
+def test_cli_evaluate_records_exact_input_hashes(tmp_path):
+    result = invoke_cli("evaluate", "--gold", str(GOLD), "--traces", str(TRACES),
+                        "--name", "hashes", "--output", str(tmp_path))
+    assert result.returncode == 0, result.stderr
+    report = json.loads((tmp_path / "hashes.json").read_text())
+    assert report["provenance"] == {
+        "gold_sha256": hashlib.sha256(GOLD.read_bytes()).hexdigest(),
+        "traces_sha256": hashlib.sha256(TRACES.read_bytes()).hexdigest(),
+    }
+    assert report["provenance"]["gold_sha256"] in (tmp_path / "hashes.md").read_text()
 
 
 def test_cli_missing_provider_and_failed_eval_return_distinct_nonzero_codes(tmp_path):
@@ -226,6 +253,31 @@ def test_cli_compare_writes_report_and_returns_failure_for_regression(tmp_path):
     assert result.returncode == 1
     assert (tmp_path / "comparison.json").exists()
     assert "FAIL" in (tmp_path / "comparison.md").read_text()
+
+
+def test_compare_rejects_reports_with_different_gold_file_hashes():
+    gold, traces = dataset()
+    baseline = evaluate(gold, traces, dataset="toy", run_name="baseline")
+    candidate = baseline.model_copy(deep=True)
+    baseline.provenance = {"gold_sha256": "a" * 64, "traces_sha256": "b" * 64}
+    candidate.provenance = {"gold_sha256": "c" * 64, "traces_sha256": "d" * 64}
+    with pytest.raises(ValueError, match="different gold file contents"):
+        compare_reports(baseline, candidate, ComparisonThresholds())
+
+
+def test_compare_remains_compatible_with_legacy_reports_without_provenance():
+    gold, traces = dataset()
+    baseline = evaluate(gold, traces, dataset="toy", run_name="baseline")
+    legacy = type(baseline).model_validate(baseline.model_dump(exclude={"provenance"}))
+    assert compare_reports(legacy, baseline, ComparisonThresholds())["passed"]
+
+
+def test_report_rejects_malformed_provenance_hashes():
+    gold, traces = dataset()
+    raw = evaluate(gold, traces, dataset="toy", run_name="baseline").model_dump()
+    raw["provenance"] = {"gold_sha256": "not-a-hash", "traces_sha256": "a" * 64}
+    with pytest.raises(ValueError, match="lowercase SHA-256 hex"):
+        EvaluationReport.model_validate(raw)
 
 
 def test_cli_compare_rejects_internally_inconsistent_report_without_traceback(tmp_path):

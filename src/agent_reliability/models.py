@@ -83,7 +83,18 @@ class EvaluationReport(StrictModel):
     mean_cost_usd: float | None
     thresholds: MetricThresholds
     passed: bool
+    provenance: dict[str, str] | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode="after")
+    def validate_provenance(self) -> "EvaluationReport":
+        if self.provenance is not None:
+            if set(self.provenance) != {"gold_sha256", "traces_sha256"}:
+                raise ValueError("provenance must contain gold_sha256 and traces_sha256")
+            for digest in self.provenance.values():
+                if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                    raise ValueError("provenance digests must be lowercase SHA-256 hex")
+        return self
 
     @model_validator(mode="after")
     def validate_report_consistency(self) -> "EvaluationReport":
@@ -132,3 +143,6 @@ def ensure_compatible_reports(base: EvaluationReport, candidate: EvaluationRepor
         raise ValueError("reports use different record counts")
     if set(base.labels) != set(candidate.labels):
         raise ValueError("reports use incompatible label sets")
+    if (base.provenance is not None and candidate.provenance is not None
+            and base.provenance["gold_sha256"] != candidate.provenance["gold_sha256"]):
+        raise ValueError("reports use different gold file contents")
