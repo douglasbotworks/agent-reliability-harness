@@ -40,6 +40,9 @@ agent-reliability review-export --gold examples/toy_gold.jsonl \
 # Run a complete temporary-directory demo: baseline PASS, regression FAIL.
 python examples/run_demo.py
 
+# Walk through a four-queue support-routing regression example (synthetic only).
+python examples/support-routing/run_demo.py
+
 # Synthetic post-launch reference: paired predictors see identical inputs;
 # candidate output is recorded for evaluation but is never served.
 agent-reliability shadow-replay --gold examples/toy_gold.jsonl \
@@ -62,7 +65,43 @@ agent-reliability weak-observations \
   --observations examples/toy_weak_observations.jsonl
 ```
 
+The support-routing example is a candidate first pilot workflow, not a validated
+customer use case. Its balanced 20-row fixture is invented and demonstrates how
+a deliberately misrouted ticket can fail configured gates; it makes no claim
+about real ticket data or model behavior. See
+[`examples/support-routing/README.md`](examples/support-routing/README.md).
+
 Evaluation writes JSON and Markdown. Comparison does the same. CLI exit codes are `0` for a passing evaluation/comparison, `1` for a measured threshold failure, and `2` for invalid input, missing configuration, or operational errors. Judge agreement and review exports are descriptive and exit `0` when inputs are valid; they do not represent a quality threshold.
+
+## CLI defaults and report scope
+
+`evaluate` and `run` default to dataset ID `dataset`, report name `run`, output
+directory `reports/`, minimum accuracy `0.90`, minimum per-label recall `0.80`,
+and minimum label support `5`. Accuracy covers every supplied row; the recall
+gate applies only to labels with at least five gold examples. These values are
+convenience defaults, not recommended acceptance limits. Always provide a
+stable, workflow-specific `--dataset` ID for a real comparison: compatibility
+checks compare the ID, row count, and label set, not the dataset's contents.
+
+`compare` defaults to allowing up to a 2 percentage-point accuracy drop and a 5
+point recall drop for each label. Latency and cost are not gated unless one
+absolute or percentage limit is set for each metric. `review-export` and
+`mine-review` select confidence below `0.7` by default; calibrate this threshold
+to the predictor, because confidence values need not be comparable across
+models.
+
+Evaluation reports contain accuracy, per-label support/predicted counts,
+precision/recall/F1, the confusion matrix, and mean latency/cost when present.
+CLI evaluation reports include SHA-256 digests of the exact gold and trace input
+files. For `run` without `--traces-out`, the trace digest covers the canonical
+JSONL serialization of the generated trace records. `compare` rejects
+reports with different gold-file digests when both reports include provenance.
+Older reports without provenance remain comparable by dataset ID, row count,
+and label set only. Digests identify bytes; they do not prove who created a file
+or that it represents the target population. Reports still do not include
+latency/cost percentiles or summarize model/prompt versions from traces.
+Preserve the matching local inputs and trace files with each report, and choose
+the dataset, labels, sample, and gates with the team running the pilot.
 
 ## Data formats
 

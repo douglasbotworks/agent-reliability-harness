@@ -104,6 +104,9 @@ def report_markdown(report: EvaluationReport) -> str:
     lines += ["", f"- Mean latency: {_fmt(report.mean_latency_ms, ' ms')}",
               f"- Mean cost: {_fmt(report.mean_cost_usd, ' USD')}", "",
               "Metrics describe only this dataset and run; passing thresholds do not establish production reliability.", ""]
+    if report.provenance:
+        lines[-1:-1] = [f"- Gold SHA-256: `{report.provenance['gold_sha256']}`",
+                        f"- Traces SHA-256: `{report.provenance['traces_sha256']}`"]
     return "\n".join(lines)
 
 
