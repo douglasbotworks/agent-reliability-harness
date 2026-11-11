@@ -73,6 +73,31 @@ about real ticket data or model behavior. See
 
 Evaluation writes JSON and Markdown. Comparison does the same. CLI exit codes are `0` for a passing evaluation/comparison, `1` for a measured threshold failure, and `2` for invalid input, missing configuration, or operational errors. Judge agreement and review exports are descriptive and exit `0` when inputs are valid; they do not represent a quality threshold.
 
+## CLI defaults and report scope
+
+`evaluate` and `run` default to dataset ID `dataset`, report name `run`, output
+directory `reports/`, minimum accuracy `0.90`, minimum per-label recall `0.80`,
+and minimum label support `5`. Accuracy covers every supplied row; the recall
+gate applies only to labels with at least five gold examples. These values are
+convenience defaults, not recommended acceptance limits. Always provide a
+stable, workflow-specific `--dataset` ID for a real comparison: compatibility
+checks compare the ID, row count, and label set, not the dataset's contents.
+
+`compare` defaults to allowing up to a 2 percentage-point accuracy drop and a 5
+point recall drop for each label. Latency and cost are not gated unless one
+absolute or percentage limit is set for each metric. `review-export` and
+`mine-review` select confidence below `0.7` by default; calibrate this threshold
+to the predictor, because confidence values need not be comparable across
+models.
+
+Evaluation reports contain accuracy, per-label support/predicted counts,
+precision/recall/F1, the confusion matrix, and mean latency/cost when present.
+They do not report latency/cost percentiles, bind themselves to gold/trace file
+hashes, summarize model/prompt versions from traces, or prove that the fixture
+represents the target population. Preserve the matching local inputs and trace
+files with each report, and choose the dataset, labels, sample, and gates with
+the team running the pilot.
+
 ## Data formats
 
 Each gold JSONL row starts with `schema_version: 1` and contains a unique non-empty `id`, arbitrary JSON `input`, non-empty `expected_label`, and optional object `metadata`. Each trace row also carries `schema_version: 1`, a matching `record_id`, `task_name`, arbitrary JSON `input` and `output`, `predicted_label`, model/prompt versions, and optional nonnegative latency/cost, UTC timestamp, confidence, judge label, and judge score. Unknown fields and unsupported schema versions are rejected. Blank lines, malformed rows, duplicate IDs, empty files, missing predictions, and extra predictions are errors with file and line context where available.
