@@ -100,6 +100,7 @@ Older reports without provenance remain comparable by dataset ID, row count, and
 label set only. Digests identify bytes; they do not prove who created a file or
 that it represents the target population. Reports still do not include
 latency/cost percentiles or summarize model/prompt versions from traces.
+latency/cost percentiles or summarize model/prompt versions from traces.
 Preserve the matching local inputs and trace files with each report, and choose
 the dataset, labels, sample, and gates with the team running the pilot.
 
