@@ -98,9 +98,10 @@ JSONL serialization of the generated trace records. `compare` rejects
 reports with different gold-file digests when both reports include provenance.
 Older reports without provenance remain comparable by dataset ID, row count, and
 label set only. Digests identify bytes; they do not prove who created a file or
-that it represents the target population. Reports still do not include
-latency/cost percentiles or summarize model/prompt versions from traces.
-latency/cost percentiles or summarize model/prompt versions from traces.
+that it represents the target population. Reports include mean and nearest-rank
+p50/p95 latency and cost for records with measurements, but do not summarize
+model/prompt versions from traces. Comparison resource gates still use the mean
+values.
 Preserve the matching local inputs and trace files with each report, and choose
 the dataset, labels, sample, and gates with the team running the pilot.
 

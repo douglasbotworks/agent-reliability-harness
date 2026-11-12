@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import Counter
+from math import ceil
 from statistics import fmean
 from typing import Iterable
 
@@ -74,6 +75,10 @@ def evaluate(
         labels=labels, per_label=per_label, confusion=confusion,
         mean_latency_ms=round(fmean(latencies), 6) if latencies else None,
         mean_cost_usd=round(fmean(costs), 8) if costs else None,
+        p50_latency_ms=_nearest_rank(latencies, 0.50, digits=6),
+        p95_latency_ms=_nearest_rank(latencies, 0.95, digits=6),
+        p50_cost_usd=_nearest_rank(costs, 0.50, digits=8),
+        p95_cost_usd=_nearest_rank(costs, 0.95, digits=8),
         thresholds=thresholds, passed=passed,
     )
 
@@ -101,8 +106,11 @@ def report_markdown(report: EvaluationReport) -> str:
         lines.append("| " + _md_cell(expected) + " | " + " | ".join(
             str(report.confusion[expected][pred]) for pred in report.labels
         ) + " |")
-    lines += ["", f"- Mean latency: {_fmt(report.mean_latency_ms, ' ms')}",
-              f"- Mean cost: {_fmt(report.mean_cost_usd, ' USD')}", "",
+    lines += ["", "## Resource metrics", "",
+              "Percentiles use nearest-rank over records with a reported measurement.", "",
+              "| Metric | Mean | P50 | P95 |", "|---|---:|---:|---:|",
+              f"| Latency | {_fmt(report.mean_latency_ms, ' ms')} | {_fmt(report.p50_latency_ms, ' ms')} | {_fmt(report.p95_latency_ms, ' ms')} |",
+              f"| Cost | {_fmt(report.mean_cost_usd, ' USD')} | {_fmt(report.p50_cost_usd, ' USD')} | {_fmt(report.p95_cost_usd, ' USD')} |", "",
               "Metrics describe only this dataset and run; passing thresholds do not establish production reliability.", ""]
     if report.provenance:
         lines[-1:-1] = [f"- Gold SHA-256: `{report.provenance['gold_sha256']}`",
@@ -112,6 +120,13 @@ def report_markdown(report: EvaluationReport) -> str:
 
 def _fmt(value: float | None, suffix: str) -> str:
     return "not reported" if value is None else f"{value:.4f}{suffix}"
+
+
+def _nearest_rank(values: list[float], percentile: float, *, digits: int) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    return round(ordered[ceil(percentile * len(ordered)) - 1], digits)
 
 
 def _md_cell(value: str) -> str:

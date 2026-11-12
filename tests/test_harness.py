@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_reliability.evaluate import compare_reports, evaluate, judge_calibration, review_csv, review_rows
+from agent_reliability.evaluate import compare_reports, evaluate, judge_calibration, report_markdown, review_csv, review_rows
 from agent_reliability.io import load_gold, load_traces
 from agent_reliability.models import (
     ComparisonThresholds, EvaluationReport, GoldRecord, MetricThresholds, TraceRecord,
@@ -37,6 +37,43 @@ def test_fixture_scores_open_labels_and_passes_configured_thresholds():
     assert report.passed
     assert report.labels == ["fail", "pass", "review"]
     assert report.confusion["review"]["review"] == 2
+
+
+def test_resource_percentiles_use_nearest_rank_and_ignore_missing_values():
+    gold, traces = dataset()
+    for trace in traces:
+        trace.latency_ms = None
+        trace.cost_usd = None
+    latencies = [10, 20, 30, 40]
+    costs = [0.01, 0.02, 0.03, 0.04]
+    for trace, latency, cost in zip(traces, latencies, costs):
+        trace.latency_ms = latency
+        trace.cost_usd = cost
+    traces[-1].latency_ms = None
+    report = evaluate(gold, traces, dataset="toy", run_name="percentiles")
+    assert report.p50_latency_ms == 20
+    assert report.p95_latency_ms == 40
+    assert report.p50_cost_usd == 0.02
+    assert report.p95_cost_usd == 0.04
+    assert "| Latency |" in report_markdown(report)
+
+
+def test_resource_percentiles_handle_single_and_missing_measurements():
+    gold, traces = dataset()
+    traces[0].latency_ms = 7
+    traces[0].cost_usd = 0.25
+    for trace in traces[1:]:
+        trace.latency_ms = None
+        trace.cost_usd = None
+    report = evaluate(gold, traces, dataset="toy", run_name="single-measurement")
+    assert report.p50_latency_ms == report.p95_latency_ms == 7
+    assert report.p50_cost_usd == report.p95_cost_usd == 0.25
+    for trace in traces:
+        trace.latency_ms = None
+        trace.cost_usd = None
+    empty = evaluate(gold, traces, dataset="toy", run_name="no-measurements")
+    assert empty.p50_latency_ms is empty.p95_latency_ms is None
+    assert empty.p50_cost_usd is empty.p95_cost_usd is None
 
 
 def test_false_positive_open_label_appears_in_confusion_and_fails():
