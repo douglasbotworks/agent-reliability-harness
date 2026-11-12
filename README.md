@@ -73,6 +73,12 @@ about real ticket data or model behavior. See
 
 Evaluation writes JSON and Markdown. Comparison does the same. CLI exit codes are `0` for a passing evaluation/comparison, `1` for a measured threshold failure, and `2` for invalid input, missing configuration, or operational errors. Judge agreement and review exports are descriptive and exit `0` when inputs are valid; they do not represent a quality threshold.
 
+Comparison reports show baseline and candidate mean, nearest-rank p50, and
+nearest-rank p95 latency and cost when those measurements are present. These
+percentiles are descriptive only; configured latency and cost regression gates
+continue to use means. Missing measurements appear as `not reported` in
+Markdown and `null` in JSON. Small samples can make p95 equal the maximum.
+
 ## CLI defaults and report scope
 
 `evaluate` and `run` default to dataset ID `dataset`, report name `run`, output

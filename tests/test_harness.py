@@ -142,6 +142,52 @@ def test_compare_detects_accuracy_recall_and_absolute_resource_regressions():
     assert any("latency" in item for item in result["regressions"])
 
 
+def test_compare_reports_percentiles_as_informational_and_keeps_mean_gates():
+    from agent_reliability.evaluate import comparison_markdown
+
+    gold, traces = dataset()
+    base = evaluate(gold, traces, dataset="toy", run_name="base")
+    # Make a tail regression while preserving the mean; percentiles are displayed,
+    # but only configured mean-based thresholds determine the comparison result.
+    candidate_traces = [t.model_copy(update={"latency_ms": latency})
+                        for t, latency in zip(traces, [0, 10, 10, 11, 16, 16])]
+    assert sum(t.latency_ms for t in candidate_traces) == sum(t.latency_ms for t in traces)
+    candidate = evaluate(gold, candidate_traces, dataset="toy", run_name="candidate")
+    result = compare_reports(base, candidate, ComparisonThresholds(max_latency_increase_ms=0))
+    assert result["passed"]
+    assert candidate.p95_latency_ms > base.p95_latency_ms
+    assert result["resources"]["latency_ms"]["baseline"]["p95"] == base.p95_latency_ms
+    assert result["resources"]["latency_ms"]["candidate"]["p95"] == candidate.p95_latency_ms
+    markdown = comparison_markdown(result)
+    assert "Baseline p95" in markdown
+    assert "nearest rank" in markdown
+    assert "configured resource gates use means" in markdown
+
+
+def test_compare_still_fails_when_mean_resource_gate_is_exceeded():
+    gold, traces = dataset()
+    base = evaluate(gold, traces, dataset="toy", run_name="base")
+    candidate_traces = [t.model_copy(update={"latency_ms": 100}) if t.record_id == "toy-001" else t
+                        for t in traces]
+    candidate = evaluate(gold, candidate_traces, dataset="toy", run_name="candidate")
+    result = compare_reports(base, candidate, ComparisonThresholds(max_latency_increase_ms=0))
+    assert not result["passed"]
+    assert any("latency" in item for item in result["regressions"])
+
+
+def test_compare_percentile_display_tolerates_legacy_missing_measurements():
+    from agent_reliability.evaluate import comparison_markdown
+
+    gold, traces = dataset()
+    base = evaluate(gold, traces, dataset="toy", run_name="base")
+    missing = [t.model_copy(update={"latency_ms": None, "cost_usd": None}) for t in traces]
+    candidate = evaluate(gold, missing, dataset="toy", run_name="candidate")
+    result = compare_reports(base, candidate, ComparisonThresholds())
+    assert result["passed"]
+    assert result["resources"]["latency_ms"]["candidate"]["p95"] is None
+    assert "not reported" in comparison_markdown(result)
+
+
 def test_compare_fails_closed_when_enabled_resource_metric_is_missing():
     gold, traces = dataset()
     baseline = evaluate(gold, traces, dataset="toy", run_name="base")
