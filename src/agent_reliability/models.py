@@ -81,6 +81,10 @@ class EvaluationReport(StrictModel):
     confusion: dict[str, dict[str, int]]
     mean_latency_ms: float | None
     mean_cost_usd: float | None
+    p50_latency_ms: float | None = Field(default=None, ge=0)
+    p95_latency_ms: float | None = Field(default=None, ge=0)
+    p50_cost_usd: float | None = Field(default=None, ge=0)
+    p95_cost_usd: float | None = Field(default=None, ge=0)
     thresholds: MetricThresholds
     passed: bool
     provenance: dict[str, str] | None = None

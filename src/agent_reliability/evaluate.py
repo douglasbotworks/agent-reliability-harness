@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import Counter
+from math import ceil
 from statistics import fmean
 from typing import Iterable
 
@@ -74,6 +75,10 @@ def evaluate(
         labels=labels, per_label=per_label, confusion=confusion,
         mean_latency_ms=round(fmean(latencies), 6) if latencies else None,
         mean_cost_usd=round(fmean(costs), 8) if costs else None,
+        p50_latency_ms=_nearest_rank(latencies, 0.50, digits=6),
+        p95_latency_ms=_nearest_rank(latencies, 0.95, digits=6),
+        p50_cost_usd=_nearest_rank(costs, 0.50, digits=8),
+        p95_cost_usd=_nearest_rank(costs, 0.95, digits=8),
         thresholds=thresholds, passed=passed,
     )
 
@@ -101,8 +106,11 @@ def report_markdown(report: EvaluationReport) -> str:
         lines.append("| " + _md_cell(expected) + " | " + " | ".join(
             str(report.confusion[expected][pred]) for pred in report.labels
         ) + " |")
-    lines += ["", f"- Mean latency: {_fmt(report.mean_latency_ms, ' ms')}",
-              f"- Mean cost: {_fmt(report.mean_cost_usd, ' USD')}", "",
+    lines += ["", "## Resource metrics", "",
+              "Percentiles use nearest-rank over records with a reported measurement.", "",
+              "| Metric | Mean | P50 | P95 |", "|---|---:|---:|---:|",
+              f"| Latency | {_fmt(report.mean_latency_ms, ' ms')} | {_fmt(report.p50_latency_ms, ' ms')} | {_fmt(report.p95_latency_ms, ' ms')} |",
+              f"| Cost | {_fmt(report.mean_cost_usd, ' USD')} | {_fmt(report.p50_cost_usd, ' USD')} | {_fmt(report.p95_cost_usd, ' USD')} |", "",
               "Metrics describe only this dataset and run; passing thresholds do not establish production reliability.", ""]
     if report.provenance:
         lines[-1:-1] = [f"- Gold SHA-256: `{report.provenance['gold_sha256']}`",
@@ -112,6 +120,13 @@ def report_markdown(report: EvaluationReport) -> str:
 
 def _fmt(value: float | None, suffix: str) -> str:
     return "not reported" if value is None else f"{value:.4f}{suffix}"
+
+
+def _nearest_rank(values: list[float], percentile: float, *, digits: int) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    return round(ordered[ceil(percentile * len(ordered)) - 1], digits)
 
 
 def _md_cell(value: str) -> str:
@@ -178,7 +193,23 @@ def compare_reports(base: EvaluationReport, candidate: EvaluationReport, limits:
         "schema_version": 1, "baseline": base.run_name, "candidate": candidate.run_name,
         "passed": not regressions, "regressions": regressions,
         "accuracy_drop": round(acc_drop, 6), "limits": limits.model_dump(mode="json"),
+        # Distribution summaries are descriptive only; configured gates remain mean-based.
+        "resources": {
+            "latency_ms": _resource_summary(base.mean_latency_ms, candidate.mean_latency_ms,
+                                            base.p50_latency_ms, candidate.p50_latency_ms,
+                                            base.p95_latency_ms, candidate.p95_latency_ms),
+            "cost_usd": _resource_summary(base.mean_cost_usd, candidate.mean_cost_usd,
+                                           base.p50_cost_usd, candidate.p50_cost_usd,
+                                           base.p95_cost_usd, candidate.p95_cost_usd),
+        },
     }
+
+
+def _resource_summary(base_mean: float | None, candidate_mean: float | None,
+                      base_p50: float | None, candidate_p50: float | None,
+                      base_p95: float | None, candidate_p95: float | None) -> dict:
+    return {"baseline": {"mean": base_mean, "p50": base_p50, "p95": base_p95},
+            "candidate": {"mean": candidate_mean, "p50": candidate_p50, "p95": candidate_p95}}
 
 
 def _compare_resource(name: str, before: float | None, after: float | None,
@@ -199,6 +230,18 @@ def _compare_resource(name: str, before: float | None, after: float | None,
 def comparison_markdown(result: dict) -> str:
     lines = [f"# Comparison: {result['baseline']} → {result['candidate']}", "",
              f"- Result: **{'PASS' if result['passed'] else 'FAIL'}**", ""]
+    resources = result.get("resources")
+    if resources:
+        lines += ["| Resource | Baseline mean | Candidate mean | Baseline p50 | Candidate p50 | Baseline p95 | Candidate p95 |",
+                  "|---|---:|---:|---:|---:|---:|---:|"]
+        for key, label, unit in (("latency_ms", "Latency", " ms"), ("cost_usd", "Cost", " USD")):
+            pair = resources.get(key, {})
+            before, after = pair.get("baseline", {}), pair.get("candidate", {})
+            values = [before.get("mean"), after.get("mean"), before.get("p50"), after.get("p50"),
+                      before.get("p95"), after.get("p95")]
+            lines.append("| " + label + " | " + " | ".join(_fmt(value, unit) for value in values) + " |")
+        lines.append("\nPercentiles use nearest rank and are descriptive; configured resource gates use means. "
+                     "On small samples, p95 may equal the maximum.\n")
     lines.extend(f"- Regression: {reason}" for reason in result["regressions"])
     if not result["regressions"]:
         lines.append("No configured regression threshold was exceeded.")

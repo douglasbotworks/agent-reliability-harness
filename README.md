@@ -73,6 +73,12 @@ about real ticket data or model behavior. See
 
 Evaluation writes JSON and Markdown. Comparison does the same. CLI exit codes are `0` for a passing evaluation/comparison, `1` for a measured threshold failure, and `2` for invalid input, missing configuration, or operational errors. Judge agreement and review exports are descriptive and exit `0` when inputs are valid; they do not represent a quality threshold.
 
+Comparison reports show baseline and candidate mean, nearest-rank p50, and
+nearest-rank p95 latency and cost when those measurements are present. These
+percentiles are descriptive only; configured latency and cost regression gates
+continue to use means. Missing measurements appear as `not reported` in
+Markdown and `null` in JSON. Small samples can make p95 equal the maximum.
+
 ## CLI defaults and report scope
 
 `evaluate` and `run` default to dataset ID `dataset`, report name `run`, output
@@ -96,10 +102,12 @@ CLI evaluation reports include SHA-256 digests of the exact gold and trace input
 files. For `run` without `--traces-out`, the trace digest covers the canonical
 JSONL serialization of the generated trace records. `compare` rejects
 reports with different gold-file digests when both reports include provenance.
-Older reports without provenance remain comparable by dataset ID, row count,
-and label set only. Digests identify bytes; they do not prove who created a file
-or that it represents the target population. Reports still do not include
-latency/cost percentiles or summarize model/prompt versions from traces.
+Older reports without provenance remain comparable by dataset ID, row count, and
+label set only. Digests identify bytes; they do not prove who created a file or
+that it represents the target population. Reports include mean and nearest-rank
+p50/p95 latency and cost for records with measurements, but do not summarize
+model/prompt versions from traces. Comparison resource gates still use the mean
+values.
 Preserve the matching local inputs and trace files with each report, and choose
 the dataset, labels, sample, and gates with the team running the pilot.
 
